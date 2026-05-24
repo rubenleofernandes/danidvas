@@ -1,0 +1,77 @@
+// Pin Definitions
+const int MIC_PIN = A0;     // Analog pin connected to MAX4466 Out [cite: 99]
+const int LED_BLUE = 2;     // 0-69 dB: Safe/Normal traffic noise [cite: 57]
+const int LED_GREEN = 3;    // 70-79 dB: Moderate environment noise [cite: 57]
+const int LED_YELLOW = 4;   // 80-95 dB: High noise / Horn nearby [cite: 57]
+const int LED_RED = 5;      // >95 dB: Critical alert / Siren detected [cite: 57]
+
+// Sampling Constants
+const int SAMPLE_WINDOW = 50; // Sample window width in milliseconds (50 ms = 20Hz)
+unsigned int sample;
+
+void setup() {
+  Serial.begin(115200);
+  
+  // Initialize LED Pins as Outputs
+  pinMode(LED_BLUE, OUTPUT);
+  pinMode(LED_GREEN, OUTPUT);
+  pinMode(LED_YELLOW, OUTPUT);
+  pinMode(LED_RED, OUTPUT);
+  
+  // Run a quick LED test on startup
+  digitalWrite(LED_BLUE, HIGH); delay(200);
+  digitalWrite(LED_GREEN, HIGH); delay(200);
+  digitalWrite(LED_YELLOW, HIGH); delay(200);
+  digitalWrite(LED_RED, HIGH); delay(200);
+  allLEDsOff();
+}
+
+void loop() {
+  unsigned long startMillis = millis();
+  unsigned int peakToPeak = 0;
+
+  unsigned int signalMax = 0;
+  unsigned int signalMin = 1024; // Assuming 10-bit ADC (change to 4095 for ESP32 12-bit)
+
+  // Collect audio samples for 50 milliseconds
+  while (millis() - startMillis < SAMPLE_WINDOW) {
+    sample = analogRead(MIC_PIN);
+    if (sample < 1024) { // Filter out stray spikes
+      if (sample > signalMax) {
+        signalMax = sample;
+      } else if (sample < signalMin) {
+        signalMin = sample;
+      }
+    }
+  }
+  
+  peakToPeak = signalMax - signalMin;  // Amplitude of the sound wave
+  
+  // Map the voltage amplitude to an estimated Decibel range (dB)
+  // Note: For exact dB matching, calibration with a physical SPL meter is required.
+  double volts = (peakToPeak * 3.3) / 1024.0; // Use 5.0 for Arduino Uno if powered by 5V
+  double db = 20 * log10(volts / 0.005) + 50;  // Offset mathematical approximation
+
+  // Print values to Serial Monitor / Plotter for real-time tracking
+  Serial.print("Volts: "); Serial.print(volts);
+  Serial.print(" | Estimated dB: "); Serial.println(db);
+
+  // Trigger visual indicators based on project thresholds [cite: 57]
+  allLEDsOff();
+  if (db < 70.0) {
+    digitalWrite(LED_BLUE, HIGH);    // Safe / Normal traffic [cite: 57]
+  } else if (db >= 70.0 && db < 80.0) {
+    digitalWrite(LED_GREEN, HIGH);   // Moderate environment noise [cite: 57]
+  } else if (db >= 80.0 && db <= 95.0) {
+    digitalWrite(LED_YELLOW, HIGH);  // High noise / Horn nearby [cite: 57]
+  } else if (db > 95.0) {
+    digitalWrite(LED_RED, HIGH);     // Critical alert / Siren detected [cite: 57]
+  }
+}
+
+void allLEDsOff() {
+  digitalWrite(LED_BLUE, LOW);
+  digitalWrite(LED_GREEN, LOW);
+  digitalWrite(LED_YELLOW, LOW);
+  digitalWrite(LED_RED, LOW);
+}
